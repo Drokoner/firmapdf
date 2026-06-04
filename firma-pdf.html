@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FirmaPDF — sin servidores</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --surface: #1a1a1a;
+    --surface2: #242424;
+    --border: #2e2e2e;
+    --accent: #c8f060;
+    --accent-dim: #9dbf3a;
+    --text: #f0f0f0;
+    --text-muted: #888;
+    --text-dim: #555;
+    --danger: #ff5c5c;
+    --radius: 10px;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); font-size: 15px; }
+
+  body { display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding: 2rem 1rem 4rem; }
+
+  header { width: 100%; max-width: 680px; margin-bottom: 2.5rem; display: flex; align-items: baseline; gap: 1rem; }
+  header h1 { font-family: var(--mono); font-size: 1.4rem; font-weight: 500; color: var(--accent); letter-spacing: -0.02em; }
+  header span { font-size: 12px; color: var(--text-dim); font-family: var(--mono); }
+
+  .app { width: 100%; max-width: 680px; }
+
+  .step { display: none; animation: fadeIn 0.2s ease; }
+  .step.active { display: block; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+  .step-label { font-family: var(--mono); font-size: 11px; color: var(--text-dim); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 0.4rem; }
+  .step-title { font-size: 1.5rem; font-weight: 300; color: var(--text); margin-bottom: 0.4rem; }
+  .step-sub { font-size: 13px; color: var(--text-muted); margin-bottom: 1.5rem; line-height: 1.5; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-bottom: 1rem; }
+
+  .drop-zone {
+    border: 1.5px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 3rem 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .drop-zone:hover { border-color: var(--accent); background: rgba(200,240,96,0.04); }
+  .drop-zone svg { display: block; margin: 0 auto 0.75rem; opacity: 0.4; }
+  .drop-zone p { font-size: 14px; color: var(--text-muted); }
+  .drop-zone p strong { color: var(--accent); font-weight: 500; }
+  #pdfInput, #uploadSigInput { display: none; }
+
+  .status { font-family: var(--mono); font-size: 12px; margin-top: 0.6rem; min-height: 18px; color: var(--text-dim); }
+  .status.ok { color: var(--accent); }
+  .status.err { color: var(--danger); }
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 1rem; background: var(--surface2); border-radius: 8px; padding: 4px; }
+  .tab { flex: 1; padding: 7px; font-size: 13px; font-family: var(--mono); border: none; border-radius: 6px; cursor: pointer; background: transparent; color: var(--text-muted); transition: all 0.15s; }
+  .tab.active { background: var(--surface); color: var(--accent); }
+
+  canvas#sigCanvas {
+    display: block; width: 100%;
+    height: 160px;
+    background: var(--surface2);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    touch-action: none;
+    cursor: crosshair;
+  }
+  .sig-hint { font-size: 12px; color: var(--text-dim); margin-top: 6px; font-family: var(--mono); }
+
+  .btn-row { display: flex; gap: 8px; margin-top: 0.75rem; flex-wrap: wrap; }
+  button.btn {
+    padding: 9px 18px; font-size: 13px; font-family: var(--mono);
+    border: 1px solid var(--border); border-radius: 8px;
+    cursor: pointer; background: transparent; color: var(--text-muted);
+    transition: all 0.15s;
+  }
+  button.btn:hover { border-color: var(--text-muted); color: var(--text); }
+  button.btn.primary { background: var(--accent); color: #0f0f0f; border-color: var(--accent); font-weight: 500; }
+  button.btn.primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+  button.btn.primary:disabled { background: var(--border); border-color: var(--border); color: var(--text-dim); cursor: not-allowed; }
+  button.btn.ghost-danger { color: var(--danger); border-color: transparent; }
+  button.btn.ghost-danger:hover { border-color: var(--danger); background: rgba(255,92,92,0.07); }
+
+  .nav { display: flex; align-items: center; gap: 8px; margin-top: 1.25rem; }
+  .nav .spacer { flex: 1; }
+
+  .upload-btn-wrap { display: flex; align-items: center; gap: 10px; }
+  #uploadPreview { max-height: 70px; border-radius: 6px; border: 1px solid var(--border); display: none; }
+
+  .pages-container { display: flex; flex-direction: column; gap: 14px; }
+  .page-wrapper { position: relative; }
+  canvas.page-canvas { display: block; width: 100%; border-radius: var(--radius); border: 1px solid var(--border); }
+  .page-label { font-family: var(--mono); font-size: 11px; color: var(--text-dim); text-align: center; margin-top: 5px; }
+
+  .sig-overlay { position: absolute; cursor: move; }
+  .sig-overlay img { display: block; width: 100%; height: 100%; pointer-events: none; user-select: none; }
+  .sig-overlay .resize-handle {
+    position: absolute; bottom: -6px; right: -6px;
+    width: 14px; height: 14px;
+    background: var(--accent); border-radius: 3px;
+    cursor: se-resize;
+  }
+  .sig-overlay .del {
+    position: absolute; top: -10px; right: -10px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--danger); color: #fff;
+    font-size: 13px; line-height: 20px; text-align: center;
+    cursor: pointer; font-family: var(--mono);
+  }
+
+  .result-card {
+    display: none;
+    margin-top: 1rem;
+    background: rgba(200,240,96,0.06);
+    border: 1px solid rgba(200,240,96,0.2);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+  }
+  .result-card p { font-size: 13px; color: var(--text-muted); margin-bottom: 1rem; }
+  .result-card .big-btn {
+    display: block; width: 100%; padding: 14px;
+    background: var(--accent); color: #0f0f0f;
+    font-family: var(--mono); font-size: 14px; font-weight: 500;
+    border: none; border-radius: 8px; cursor: pointer;
+    text-align: center; text-decoration: none;
+    transition: background 0.15s;
+    margin-bottom: 8px;
+  }
+  .result-card .big-btn:hover { background: var(--accent-dim); }
+
+  .color-picker { display: flex; gap: 8px; align-items: center; margin-left: 8px; }
+  .color-btn { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; transition: transform 0.15s, border-color 0.15s; }
+  .color-btn:hover { transform: scale(1.15); }
+  .color-btn.active { border-color: var(--accent); transform: scale(1.15); }
+
+  .progress { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>firma_pdf</h1>
+  <span>// 100% local · sin servidores · open source</span>
+</header>
+
+<main class="app">
+
+  <!-- PASO 1: seleccionar PDF -->
+  <div class="step active" id="step1">
+    <p class="step-label">paso 01 / 03</p>
+    <h2 class="step-title">Selecciona el PDF</h2>
+    <p class="step-sub">El archivo nunca sale de tu dispositivo. Todo el procesamiento ocurre en el navegador.</p>
+    <div class="card">
+      <div class="drop-zone" id="dropZone">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="12" y1="18" x2="12" y2="12"/>
+          <line x1="9" y1="15" x2="15" y2="15"/>
+        </svg>
+        <p><strong>Toca aquí</strong> para seleccionar un PDF</p>
+      </div>
+      <input type="file" id="pdfInput" accept="application/pdf">
+      <p class="status" id="pdfStatus"></p>
+    </div>
+    <div class="nav">
+      <span class="spacer"></span>
+      <button class="btn primary" id="toStep2Btn" disabled>Siguiente →</button>
+    </div>
+  </div>
+
+  <!-- PASO 2: crear firma -->
+  <div class="step" id="step2">
+    <p class="step-label">paso 02 / 03</p>
+    <h2 class="step-title">Crea tu firma</h2>
+    <p class="step-sub">Dibuja con el dedo o el ratón, o sube una imagen (PNG transparente recomendado).</p>
+    <div class="card">
+      <div class="tabs">
+        <button class="tab active" id="tabDraw" onclick="switchTab('draw')">✏ Dibujar</button>
+        <button class="tab" id="tabUpload" onclick="switchTab('upload')">↑ Imagen</button>
+      </div>
+      <div id="paneDraw">
+        <canvas id="sigCanvas"></canvas>
+        <p class="sig-hint">// dibuja tu firma arriba</p>
+        <div class="btn-row" style="align-items:center;">
+          <button class="btn ghost-danger" onclick="clearSig()">✕ Limpiar</button>
+          <div class="color-picker">
+            <button class="color-btn active" data-color="#111111" style="background:#111111;" onclick="setColor(this)" title="Negro"></button>
+            <button class="color-btn" data-color="#1a3fc4" style="background:#1a3fc4;" onclick="setColor(this)" title="Azul"></button>
+            <button class="color-btn" data-color="#c0001a" style="background:#c0001a;" onclick="setColor(this)" title="Rojo"></button>
+          </div>
+        </div>
+      </div>
+      <div id="paneUpload" style="display:none;">
+        <div class="upload-btn-wrap">
+          <button class="btn" onclick="document.getElementById('uploadSigInput').click()">↑ Seleccionar imagen</button>
+          <img id="uploadPreview">
+        </div>
+        <input type="file" id="uploadSigInput" accept="image/*">
+        <p class="sig-hint">// PNG con fondo transparente queda mejor</p>
+      </div>
+    </div>
+    <div class="nav">
+      <button class="btn" onclick="goStep(1)">← Atrás</button>
+      <span class="spacer"></span>
+      <button class="btn primary" onclick="goStep3()">Colocar firma →</button>
+    </div>
+  </div>
+
+  <!-- PASO 3: colocar y descargar -->
+  <div class="step" id="step3">
+    <p class="step-label">paso 03 / 03</p>
+    <h2 class="step-title">Coloca la firma</h2>
+    <p class="step-sub">Arrastra la firma donde quieras. Redimensiona con el cuadrado verde. Usa + para añadir más.</p>
+    <div class="card">
+      <div class="pages-container" id="pagesContainer">
+        <p class="progress" id="renderProgress">Renderizando páginas...</p>
+      </div>
+    </div>
+    <div class="nav">
+      <button class="btn" onclick="goStep(2)">← Atrás</button>
+      <button class="btn" onclick="addSig()">+ Firma</button>
+      <span class="spacer"></span>
+      <button class="btn primary" id="genBtn" onclick="generatePDF()">⬇ Generar PDF</button>
+    </div>
+    <p class="status" id="genStatus"></p>
+
+    <div class="result-card" id="resultCard">
+      <p>✓ PDF generado correctamente. Pulsa el botón para descargarlo.</p>
+      <button onclick="downloadPDF()" class="big-btn">⬇ Descargar PDF firmado</button>
+      <p class="copy-hint" id="copyHint"></p>
+    </div>
+  </div>
+
+</main>
+
+<script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+<script src="https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+const state = { pdfBytes: null, sigDataUrl: null, pageCanvases: [], currentTab: 'draw', uploadedSig: null };
+let drawing = false, lastX = 0, lastY = 0;
+
+// --- Canvas firma ---
+const sigCanvas = document.getElementById('sigCanvas');
+const sigCtx = sigCanvas.getContext('2d');
+
+let sigColor = '#111111';
+
+function setColor(btn) {
+  sigColor = btn.dataset.color;
+  document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  setupCtx();
+}
+
+function setupCtx() {
+  sigCtx.strokeStyle = sigColor;
+  sigCtx.lineWidth = 2.5;
+  sigCtx.lineCap = 'round';
+  sigCtx.lineJoin = 'round';
+}
+
+function initSigCanvas() {
+  sigCanvas.width = sigCanvas.offsetWidth || 560;
+  sigCanvas.height = 160;
+  setupCtx();
+}
+
+// Inicializar en cuanto el DOM esté pintado
+requestAnimationFrame(() => { requestAnimationFrame(() => { initSigCanvas(); }); });
+window.addEventListener('resize', initSigCanvas);
+
+function getPosOnCanvas(e) {
+  const r = sigCanvas.getBoundingClientRect();
+  const src = e.touches ? e.touches[0] : e;
+  // Escalar de CSS px a canvas px
+  const scaleX = sigCanvas.width / r.width;
+  const scaleY = sigCanvas.height / r.height;
+  return {
+    x: (src.clientX - r.left) * scaleX,
+    y: (src.clientY - r.top) * scaleY
+  };
+}
+
+sigCanvas.addEventListener('mousedown', e => {
+  drawing = true;
+  const p = getPosOnCanvas(e); lastX = p.x; lastY = p.y;
+});
+sigCanvas.addEventListener('mousemove', e => {
+  if (!drawing) return;
+  const p = getPosOnCanvas(e);
+  sigCtx.beginPath(); sigCtx.moveTo(lastX, lastY); sigCtx.lineTo(p.x, p.y); sigCtx.stroke();
+  lastX = p.x; lastY = p.y;
+});
+sigCanvas.addEventListener('mouseup', () => drawing = false);
+sigCanvas.addEventListener('mouseleave', () => drawing = false);
+sigCanvas.addEventListener('touchstart', e => {
+  e.preventDefault(); drawing = true;
+  const p = getPosOnCanvas(e); lastX = p.x; lastY = p.y;
+}, { passive: false });
+sigCanvas.addEventListener('touchmove', e => {
+  e.preventDefault(); if (!drawing) return;
+  const p = getPosOnCanvas(e);
+  sigCtx.beginPath(); sigCtx.moveTo(lastX, lastY); sigCtx.lineTo(p.x, p.y); sigCtx.stroke();
+  lastX = p.x; lastY = p.y;
+}, { passive: false });
+sigCanvas.addEventListener('touchend', () => drawing = false);
+
+function clearSig() {
+  sigCtx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+  setupCtx();
+}
+
+// --- Tabs ---
+function switchTab(tab) {
+  state.currentTab = tab;
+  document.getElementById('tabDraw').classList.toggle('active', tab === 'draw');
+  document.getElementById('tabUpload').classList.toggle('active', tab === 'upload');
+  document.getElementById('paneDraw').style.display = tab === 'draw' ? '' : 'none';
+  document.getElementById('paneUpload').style.display = tab === 'upload' ? '' : 'none';
+}
+
+document.getElementById('uploadSigInput').addEventListener('change', e => {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    state.uploadedSig = ev.target.result;
+    const prev = document.getElementById('uploadPreview');
+    prev.src = ev.target.result; prev.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+});
+
+// --- Cargar PDF ---
+document.getElementById('dropZone').addEventListener('click', () => document.getElementById('pdfInput').click());
+document.getElementById('pdfInput').addEventListener('change', async e => {
+  const file = e.target.files[0]; if (!file) return;
+  const st = document.getElementById('pdfStatus');
+  st.textContent = 'Cargando...'; st.className = 'status';
+  try {
+    state.pdfBytes = await file.arrayBuffer();
+    st.textContent = '✓ ' + file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
+    st.className = 'status ok';
+    document.getElementById('toStep2Btn').disabled = false;
+  } catch(err) { st.textContent = 'Error: ' + err.message; st.className = 'status err'; }
+});
+document.getElementById('toStep2Btn').addEventListener('click', () => goStep(2));
+
+// --- Navegación ---
+function goStep(n) {
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
+  document.getElementById('step' + n).classList.add('active');
+}
+
+function getSigDataUrl() {
+  if (state.currentTab === 'draw') {
+    const data = sigCtx.getImageData(0, 0, sigCanvas.width, sigCanvas.height).data;
+    const hasContent = data.some((v, i) => i % 4 === 3 && v > 0);
+    if (!hasContent) return null;
+    return sigCanvas.toDataURL('image/png');
+  }
+  return state.uploadedSig || null;
+}
+
+async function goStep3() {
+  const sig = getSigDataUrl();
+  if (!sig) { alert('Dibuja o sube tu firma primero'); return; }
+  state.sigDataUrl = sig;
+  goStep(3);
+  await renderPages();
+}
+
+// --- Renderizar páginas ---
+async function renderPages() {
+  const container = document.getElementById('pagesContainer');
+  container.innerHTML = '<p class="progress" id="renderProgress">Cargando páginas...</p>';
+  state.pageCanvases = [];
+  const pdf = await pdfjsLib.getDocument({ data: state.pdfBytes.slice(0) }).promise;
+  container.innerHTML = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    document.getElementById('renderProgress') && (document.getElementById('renderProgress').textContent = 'Renderizando página ' + i + ' de ' + pdf.numPages + '...');
+    const page = await pdf.getPage(i);
+    const scale = Math.min(2, (window.innerWidth - 64) / page.getViewport({ scale: 1 }).width * 2);
+    const vp = page.getViewport({ scale });
+    const wrapper = document.createElement('div'); wrapper.className = 'page-wrapper';
+    const cv = document.createElement('canvas'); cv.className = 'page-canvas';
+    cv.width = vp.width; cv.height = vp.height;
+    cv.dataset.pdfW = page.getViewport({ scale: 1 }).width;
+    cv.dataset.pdfH = page.getViewport({ scale: 1 }).height;
+    wrapper.appendChild(cv);
+    const lbl = document.createElement('p'); lbl.className = 'page-label'; lbl.textContent = 'página ' + i + ' / ' + pdf.numPages;
+    wrapper.appendChild(lbl);
+    container.appendChild(wrapper);
+    state.pageCanvases.push(cv);
+    await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+  }
+  addSig();
+}
+
+// --- Añadir firma overlay ---
+function addSig() {
+  const cv = state.pageCanvases[0]; if (!cv) return;
+  const wrapper = cv.parentElement;
+  const dW = cv.offsetWidth, dH = cv.offsetHeight;
+  const sigW = Math.round(dW * 0.28), sigH = Math.round(sigW * 0.4);
+  const ov = document.createElement('div'); ov.className = 'sig-overlay';
+  ov.style.cssText = 'left:20px;top:' + (dH - sigH - 24) + 'px;width:' + sigW + 'px;height:' + sigH + 'px;';
+  const img = document.createElement('img'); img.src = state.sigDataUrl; ov.appendChild(img);
+  const handle = document.createElement('div'); handle.className = 'resize-handle'; ov.appendChild(handle);
+  const del = document.createElement('div'); del.className = 'del'; del.textContent = '×'; del.onclick = () => ov.remove(); ov.appendChild(del);
+  makeDraggable(ov, cv); makeResizable(handle, ov);
+  wrapper.appendChild(ov);
+}
+
+function makeDraggable(el, cv) {
+  let sx, sy, ox, oy;
+  const down = e => {
+    if (e.target.classList.contains('resize-handle') || e.target.classList.contains('del')) return;
+    e.preventDefault();
+    const s = e.touches ? e.touches[0] : e; sx = s.clientX; sy = s.clientY; ox = el.offsetLeft; oy = el.offsetTop;
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+    document.addEventListener('touchmove', move, { passive: false }); document.addEventListener('touchend', up);
+  };
+  const move = e => {
+    e.preventDefault(); const s = e.touches ? e.touches[0] : e;
+    const wrap = cv.parentElement;
+    el.style.left = Math.max(0, Math.min(wrap.offsetWidth - el.offsetWidth, ox + s.clientX - sx)) + 'px';
+    el.style.top = Math.max(0, Math.min(cv.offsetHeight - el.offsetHeight, oy + s.clientY - sy)) + 'px';
+  };
+  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.removeEventListener('touchmove', move); document.removeEventListener('touchend', up); };
+  el.addEventListener('mousedown', down); el.addEventListener('touchstart', down, { passive: false });
+}
+
+function makeResizable(handle, el) {
+  let sx, sy, sw, sh;
+  const down = e => {
+    e.preventDefault(); e.stopPropagation();
+    const s = e.touches ? e.touches[0] : e; sx = s.clientX; sy = s.clientY; sw = el.offsetWidth; sh = el.offsetHeight;
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+    document.addEventListener('touchmove', move, { passive: false }); document.addEventListener('touchend', up);
+  };
+  const move = e => {
+    e.preventDefault(); const s = e.touches ? e.touches[0] : e;
+    el.style.width = Math.max(40, sw + s.clientX - sx) + 'px';
+    el.style.height = Math.max(20, sh + s.clientY - sy) + 'px';
+  };
+  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.removeEventListener('touchmove', move); document.removeEventListener('touchend', up); };
+  handle.addEventListener('mousedown', down); handle.addEventListener('touchstart', down, { passive: false });
+}
+
+// --- Generar PDF ---
+function uint8ToBase64(bytes) {
+  let binary = '';
+  const chunk = 8192;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+async function generatePDF() {
+  const st = document.getElementById('genStatus');
+  const card = document.getElementById('resultCard');
+  const btn = document.getElementById('genBtn');
+  st.textContent = 'Generando...'; st.className = 'status progress';
+  card.style.display = 'none'; btn.disabled = true;
+
+  try {
+    const { PDFDocument } = PDFLib;
+    const pdfDoc = await PDFDocument.load(state.pdfBytes);
+    const pages = pdfDoc.getPages();
+
+    const binSig = atob(state.sigDataUrl.split(',')[1]);
+    const sigBytes = new Uint8Array(binSig.length);
+    for (let b = 0; b < binSig.length; b++) sigBytes[b] = binSig.charCodeAt(b);
+    const embImg = await pdfDoc.embedPng(sigBytes);
+
+    for (let i = 0; i < state.pageCanvases.length; i++) {
+      const cv = state.pageCanvases[i];
+      const overlays = cv.parentElement.querySelectorAll('.sig-overlay');
+      if (!overlays.length) continue;
+      const pdfPage = pages[i];
+      const pdfW = parseFloat(cv.dataset.pdfW);
+      const pdfH = parseFloat(cv.dataset.pdfH);
+      const scX = pdfW / cv.offsetWidth, scY = pdfH / cv.offsetHeight;
+      for (const ov of overlays) {
+        pdfPage.drawImage(embImg, {
+          x: parseFloat(ov.style.left) * scX,
+          y: pdfH - parseFloat(ov.style.top) * scY - ov.offsetHeight * scY,
+          width: ov.offsetWidth * scX,
+          height: ov.offsetHeight * scY
+        });
+      }
+    }
+
+    const outBytes = await pdfDoc.save();
+    state.pdfResult = new Uint8Array(outBytes);
+
+    st.textContent = ''; st.className = 'status';
+    card.style.display = 'block';
+    btn.disabled = false;
+  } catch(err) {
+    st.textContent = 'Error: ' + err.message; st.className = 'status err';
+    btn.disabled = false;
+  }
+}
+
+function downloadPDF() {
+  if (!state.pdfResult) return;
+  const blob = new Blob([state.pdfResult], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'documento_firmado.pdf';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(url); document.body.removeChild(a); }, 1000);
+}
+</script>
+</body>
+</html>
