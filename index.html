@@ -66,7 +66,7 @@
 
   canvas#sigCanvas {
     display: block; width: 100%;
-    height: 160px;
+    height: 220px;
     background: var(--surface2);
     border-radius: var(--radius);
     border: 1px solid var(--border);
@@ -272,7 +272,7 @@ function setupCtx() {
 
 function initSigCanvas() {
   sigCanvas.width = sigCanvas.offsetWidth || 560;
-  sigCanvas.height = 160;
+  sigCanvas.height = 220;
   setupCtx();
 }
 
@@ -468,6 +468,22 @@ function uint8ToBase64(bytes) {
   return btoa(binary);
 }
 
+function normalizeToPng(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      resolve(c.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('No se pudo cargar la imagen de firma'));
+    img.src = dataUrl;
+  });
+}
+
 async function generatePDF() {
   const st = document.getElementById('genStatus');
   const card = document.getElementById('resultCard');
@@ -480,7 +496,9 @@ async function generatePDF() {
     const pdfDoc = await PDFDocument.load(state.pdfBytes);
     const pages = pdfDoc.getPages();
 
-    const binSig = atob(state.sigDataUrl.split(',')[1]);
+    // Normalizar la firma a PNG (soporta JPG, WebP, etc. de imágenes subidas)
+    const pngDataUrl = await normalizeToPng(state.sigDataUrl);
+    const binSig = atob(pngDataUrl.split(',')[1]);
     const sigBytes = new Uint8Array(binSig.length);
     for (let b = 0; b < binSig.length; b++) sigBytes[b] = binSig.charCodeAt(b);
     const embImg = await pdfDoc.embedPng(sigBytes);
