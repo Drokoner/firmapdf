@@ -115,6 +115,18 @@
     font-size: 13px; line-height: 20px; text-align: center;
     cursor: pointer; font-family: var(--mono);
   }
+  .sig-overlay .page-move {
+    position: absolute; top: -10px; left: -10px;
+    display: flex; gap: 2px;
+  }
+  .sig-overlay .page-move button {
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--accent); color: #0f0f0f;
+    border: none; font-size: 11px; line-height: 1;
+    cursor: pointer; font-family: var(--mono);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sig-overlay .page-move button:disabled { background: var(--border); color: var(--text-dim); cursor: not-allowed; }
 
   .result-card {
     display: none;
@@ -418,26 +430,89 @@ function addSig() {
   const img = document.createElement('img'); img.src = state.sigDataUrl; ov.appendChild(img);
   const handle = document.createElement('div'); handle.className = 'resize-handle'; ov.appendChild(handle);
   const del = document.createElement('div'); del.className = 'del'; del.textContent = '×'; del.onclick = () => ov.remove(); ov.appendChild(del);
-  makeDraggable(ov, cv); makeResizable(handle, ov);
+
+  // Botones de mover entre páginas (solo si hay más de una)
+  if (state.pageCanvases.length > 1) {
+    const pm = document.createElement('div'); pm.className = 'page-move';
+    const up = document.createElement('button'); up.textContent = '▲'; up.title = 'Página anterior';
+    up.onclick = ev => { ev.stopPropagation(); moveSigToPage(ov, -1); };
+    const down = document.createElement('button'); down.textContent = '▼'; down.title = 'Página siguiente';
+    down.onclick = ev => { ev.stopPropagation(); moveSigToPage(ov, 1); };
+    pm.appendChild(up); pm.appendChild(down);
+    ov.appendChild(pm);
+  }
+
+  makeDraggable(ov); makeResizable(handle, ov);
   wrapper.appendChild(ov);
+  updatePageMoveButtons(ov);
 }
 
-function makeDraggable(el, cv) {
-  let sx, sy, ox, oy;
+function moveSigToPage(ov, dir) {
+  const curWrapper = ov.parentElement;
+  const curCv = curWrapper.querySelector('canvas.page-canvas');
+  const curIdx = state.pageCanvases.indexOf(curCv);
+  const newIdx = curIdx + dir;
+  if (newIdx < 0 || newIdx >= state.pageCanvases.length) return;
+  const targetWrapper = state.pageCanvases[newIdx].parentElement;
+  targetWrapper.appendChild(ov);
+  // Mantener posición proporcional
+  updatePageMoveButtons(ov);
+  ov.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function updatePageMoveButtons(ov) {
+  const pm = ov.querySelector('.page-move');
+  if (!pm) return;
+  const curCv = ov.parentElement.querySelector('canvas.page-canvas');
+  const idx = state.pageCanvases.indexOf(curCv);
+  pm.children[0].disabled = (idx <= 0);
+  pm.children[1].disabled = (idx >= state.pageCanvases.length - 1);
+}
+
+function makeDraggable(el) {
+  let sx, sy, ox, oy, curCv;
   const down = e => {
     if (e.target.classList.contains('resize-handle') || e.target.classList.contains('del')) return;
     e.preventDefault();
+    curCv = el.parentElement.querySelector('canvas.page-canvas');
     const s = e.touches ? e.touches[0] : e; sx = s.clientX; sy = s.clientY; ox = el.offsetLeft; oy = el.offsetTop;
+    el.style.zIndex = '100';
     document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
     document.addEventListener('touchmove', move, { passive: false }); document.addEventListener('touchend', up);
   };
   const move = e => {
     e.preventDefault(); const s = e.touches ? e.touches[0] : e;
-    const wrap = cv.parentElement;
+    const wrap = curCv.parentElement;
     el.style.left = Math.max(0, Math.min(wrap.offsetWidth - el.offsetWidth, ox + s.clientX - sx)) + 'px';
-    el.style.top = Math.max(0, Math.min(cv.offsetHeight - el.offsetHeight, oy + s.clientY - sy)) + 'px';
+    el.style.top = Math.max(-el.offsetHeight/2, Math.min(curCv.offsetHeight - el.offsetHeight/2, oy + s.clientY - sy)) + 'px';
   };
-  const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.removeEventListener('touchmove', move); document.removeEventListener('touchend', up); };
+  const up = e => {
+    el.style.zIndex = '';
+    // Detectar si se soltó sobre otra página
+    const s = e.changedTouches ? e.changedTouches[0] : e;
+    if (s) {
+      const centerX = s.clientX;
+      const centerY = s.clientY;
+      for (let i = 0; i < state.pageCanvases.length; i++) {
+        const cv = state.pageCanvases[i];
+        const r = cv.getBoundingClientRect();
+        if (centerX >= r.left && centerX <= r.right && centerY >= r.top && centerY <= r.bottom) {
+          const targetWrapper = cv.parentElement;
+          if (targetWrapper !== el.parentElement) {
+            // Reasignar a la nueva página, manteniendo posición relativa
+            const newLeft = Math.max(0, Math.min(cv.offsetWidth - el.offsetWidth, centerX - r.left - el.offsetWidth/2));
+            const newTop = Math.max(0, Math.min(cv.offsetHeight - el.offsetHeight, centerY - r.top - el.offsetHeight/2));
+            targetWrapper.appendChild(el);
+            el.style.left = newLeft + 'px';
+            el.style.top = newTop + 'px';
+            updatePageMoveButtons(el);
+          }
+          break;
+        }
+      }
+    }
+    document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); document.removeEventListener('touchmove', move); document.removeEventListener('touchend', up);
+  };
   el.addEventListener('mousedown', down); el.addEventListener('touchstart', down, { passive: false });
 }
 
